@@ -1,5 +1,13 @@
 package mapreduce
 
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	//"sort"
+)
+
 // doReduce does the job of a reduce worker: it reads the intermediate
 // key/value pairs (produced by the map phase) for this task, sorts the
 // intermediate key/value pairs by key, calls the user-defined reduce function
@@ -31,4 +39,54 @@ func doReduce(
 	// 	enc.Encode(KeyValue{key, reduceF(...)})
 	// }
 	// file.Close()
+	var kvs []*KeyValue
+	var kvmap = make(map[string][]string)
+
+	// decode content from each map task
+	for i := 0; i < nMap; i++ {
+		fn := reduceName(jobName, i, reduceTaskNumber)
+		rfile, err := os.Open(fn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "open %s failed: %s\n", fn, err)
+			return
+		}
+		defer rfile.Close()
+		dec := json.NewDecoder(rfile)
+		for {
+			var kv KeyValue
+			err = dec.Decode(&kv)
+			if err == nil {
+				kvs = append(kvs, &kv)
+			} else if err == io.EOF {
+				break
+			} else {
+				fmt.Fprintf(os.Stderr, "decode %s failed: %s\n", fn, err)
+				return
+			}
+		}
+	}
+
+	for _, kv := range kvs {
+		if kvmap[kv.Key] != nil {
+			kvmap[kv.Key] = append(kvmap[kv.Key], kv.Value)
+		} else {
+			kvmap[kv.Key] = []string{kv.Value}
+		}
+	}
+
+	// make mergeFile
+	fn := mergeName(jobName, reduceTaskNumber)
+	mergeFile, err := os.Create(fn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create %s failed: %s\n", fn, err)
+		return
+	}
+	defer mergeFile.Close()
+	enc := json.NewEncoder(mergeFile)
+
+	// call reduce and write result
+	for key, values := range kvmap {
+		r := reduceF(key, values)
+		enc.Encode(KeyValue{key, r})
+	}
 }
