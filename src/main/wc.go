@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"mapreduce"
 	"os"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -14,8 +15,12 @@ import (
 // key/value pairs, each represented by a mapreduce.KeyValue.
 func mapF(document string, value string) (res []mapreduce.KeyValue) {
 	words := strings.FieldsFunc(value, func(r rune) bool { return !unicode.IsLetter(r) })
+	wordcnt := make(map[string]int)
 	for _, word := range words {
-		res = append(res, mapreduce.KeyValue{word, ""})
+		wordcnt[word] += 1
+	}
+	for word, cnt := range wordcnt {
+		res = append(res, mapreduce.KeyValue{word, fmt.Sprintf("%d", cnt)})
 	}
 	return
 }
@@ -24,7 +29,15 @@ func mapF(document string, value string) (res []mapreduce.KeyValue) {
 // list of that key's string value (merged across all inputs). The return value
 // should be a single output value for that key.
 func reduceF(key string, values []string) string {
-	return fmt.Sprintf("%d", len(values))
+	var sum int
+	for _, v := range values {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			continue
+		}
+		sum += n
+	}
+	return fmt.Sprintf("%d", sum)
 }
 
 // Can be run in 3 ways:
