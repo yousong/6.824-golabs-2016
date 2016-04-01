@@ -14,6 +14,7 @@ type Master struct {
 
 	address         string
 	registerChannel chan string
+	workersChannel  chan string
 	doneChannel     chan bool
 	workers         []string // protected by the mutex
 

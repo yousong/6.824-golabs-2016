@@ -4,8 +4,6 @@ import (
 	"fmt"
 )
 
-var cworker chan string
-
 // schedule starts and waits for all tasks in the given phase (Map or Reduce).
 func (mr *Master) schedule(phase jobPhase) {
 	var ntasks int
@@ -23,12 +21,18 @@ func (mr *Master) schedule(phase jobPhase) {
 
 	ctask := make(chan int, ntasks)
 	cdone := make(chan bool, 4)
-	if cworker == nil {
-		cworker = make(chan string, nios)
+	if mr.workersChannel == nil {
+		var bufsiz int
+		if ntasks >= nios {
+			bufsiz = ntasks
+		} else {
+			bufsiz = nios
+		}
+		mr.workersChannel = make(chan string, bufsiz)
 		go func() {
 			for {
 				w := <-mr.registerChannel
-				cworker <- w
+				mr.workersChannel <- w
 			}
 		}()
 	}
@@ -44,7 +48,7 @@ func (mr *Master) schedule(phase jobPhase) {
 			if ok == false {
 				return
 			}
-			w := <-cworker
+			w := <-mr.workersChannel
 
 			go func() {
 				var res bool
@@ -60,11 +64,12 @@ func (mr *Master) schedule(phase jobPhase) {
 				case reducePhase:
 					res = call(w, "Worker.DoTask", args, new(struct{}))
 				}
-				cworker <- w
-				if res == false {
+				if res == true {
+					mr.workersChannel <- w
+					cdone <- res
+				} else {
 					ctask <- t
 				}
-				cdone <- res
 			}()
 		}
 	}()
